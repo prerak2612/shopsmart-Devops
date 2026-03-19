@@ -25,7 +25,18 @@ jobs:
             echo "⚠️  EC2 secrets not configured — skipping deploy."
           else
             echo "skip=false" >> "$GITHUB_OUTPUT"
+            echo "✓ All secrets present"
           fi
+
+      # Pre-flight: verify EC2 is reachable on port 22 before SSH action runs.
+      # A failure here gives a clear error instead of a cryptic 2-second SSH abort.
+      - name: Verify EC2 is reachable (port 22)
+        if: steps.secrets-check.outputs.skip == 'false'
+        run: |
+          echo "Testing TCP connection to ${{ secrets.EC2_HOST }}:22 ..."
+          timeout 10 bash -c "cat < /dev/null > /dev/tcp/${{ secrets.EC2_HOST }}/22" \
+            && echo "✓ Port 22 is open" \
+            || { echo "✗ Cannot reach ${{ secrets.EC2_HOST }}:22 — check Security Group inbound rules"; exit 1; }
 
       - name: Deploy via SSH
         if: steps.secrets-check.outputs.skip == 'false'
@@ -36,14 +47,34 @@ jobs:
           key: ${{ secrets.EC2_SSH_KEY }}
           port: 22
           script_stop: true
+          # ── Bootstrap: ensure repo exists before deploy.sh is called ──────
+          # This handles first-time deploys where the repo isn't cloned yet.
           script: |
             export APP_DIR="${{ secrets.EC2_APP_DIR }}"
             export REPO_URL="https://github.com/${{ github.repository }}.git"
             export NODE_ENV="production"
             export PORT="5001"
 
-            # Ensure logs directory exists before PM2 tries to write to it
+            echo "── Bootstrap ──────────────────────────────────────────────"
+            echo "  APP_DIR : $APP_DIR"
+            echo "  REPO_URL: $REPO_URL"
+            echo "  User    : $(whoami)"
+            echo "  Node    : $(node --version 2>/dev/null || echo not found)"
+            echo "  npm     : $(npm --version 2>/dev/null || echo not found)"
+            echo "  pm2     : $(pm2 --version 2>/dev/null || echo not found)"
+
+            # Create APP_DIR and logs dir (idempotent)
             mkdir -p "$APP_DIR/logs"
 
+            # Clone repo if not already there — first-time bootstrap
+            if [ ! -d "$APP_DIR/.git" ]; then
+              echo "  → Fresh install: cloning repo into $APP_DIR"
+              git clone "$REPO_URL" "$APP_DIR"
+            else
+              echo "  → Repo already exists, deploy.sh will handle pull"
+            fi
+
+            echo "── Running deploy.sh ──────────────────────────────────────"
             bash "$APP_DIR/scripts/deploy.sh"
+
 
