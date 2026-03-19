@@ -13,8 +13,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Guard: skip the entire deploy when secrets are not configured.
-      # This prevents a red failure on forks or before secrets are added.
+      # Guard: skip deploy if EC2 secrets are not yet configured.
       - name: Check required secrets
         id: secrets-check
         run: |
@@ -39,4 +38,12 @@ jobs:
           script_stop: true
           script: |
             export APP_DIR="${{ secrets.EC2_APP_DIR }}"
+            export REPO_URL="https://github.com/${{ github.repository }}.git"
+            export NODE_ENV="production"
+            export PORT="5001"
+
+            # Ensure logs directory exists before PM2 tries to write to it
+            mkdir -p "$APP_DIR/logs"
+
             bash "$APP_DIR/scripts/deploy.sh"
+
