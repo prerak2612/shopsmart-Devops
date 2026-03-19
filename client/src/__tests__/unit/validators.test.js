@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { isValidEmail, isNonEmpty, isValidUrl, isPositiveNumber } from '../../helpers/validators';
+import {
+  isValidEmail,
+  isNonEmpty,
+  isValidUrl,
+  isPositiveNumber,
+} from '../../helpers/validators';
 
 describe('isValidEmail', () => {
   it('should return true for a valid email address', () => {

@@ -28,7 +28,9 @@ describe('ErrorBoundary Integration Tests', () => {
 
     expect(screen.getByTestId('error-boundary')).toBeInTheDocument();
     expect(screen.getByText('Something went wrong')).toBeInTheDocument();
-    expect(screen.getByTestId('error-message')).toHaveTextContent('Test render error');
+    expect(screen.getByTestId('error-message')).toHaveTextContent(
+      'Test render error'
+    );
   });
 
   it('should render children normally when no error occurs', () => {

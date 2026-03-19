@@ -30,7 +30,9 @@ describe('App Integration Tests', () => {
     await waitFor(() => {
       expect(screen.getByTestId('status-text')).toHaveTextContent('Ok');
     });
-    expect(screen.getByTestId('message-text')).toHaveTextContent('ShopSmart Backend is running');
+    expect(screen.getByTestId('message-text')).toHaveTextContent(
+      'ShopSmart Backend is running'
+    );
   });
 
   it('should show loading spinner before data arrives', () => {

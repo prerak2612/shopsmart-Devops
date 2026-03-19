@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { formatTimestamp, formatStatus, truncateText, formatCurrency } from '../../helpers/formatters';
+import {
+  formatTimestamp,
+  formatStatus,
+  truncateText,
+  formatCurrency,
+} from '../../helpers/formatters';
 
 describe('formatTimestamp', () => {
   it('should format a valid ISO timestamp to a readable string', () => {
@@ -35,7 +40,9 @@ describe('formatStatus', () => {
 
 describe('truncateText', () => {
   it('should truncate text longer than maxLen and add ellipsis', () => {
-    expect(truncateText('Hello World, this is a long text', 10)).toBe('Hello Worl...');
+    expect(truncateText('Hello World, this is a long text', 10)).toBe(
+      'Hello Worl...'
+    );
   });
 
   it('should return the original text if shorter than maxLen', () => {

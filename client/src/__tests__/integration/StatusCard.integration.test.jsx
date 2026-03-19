@@ -13,7 +13,9 @@ describe('StatusCard Integration Tests', () => {
     );
 
     expect(screen.getByTestId('status-text')).toHaveTextContent('Ok');
-    expect(screen.getByTestId('message-text')).toHaveTextContent('Backend is running');
+    expect(screen.getByTestId('message-text')).toHaveTextContent(
+      'Backend is running'
+    );
     expect(screen.getByTestId('timestamp-text')).toBeInTheDocument();
   });
 
@@ -28,6 +30,8 @@ describe('StatusCard Integration Tests', () => {
   it('should show "No status available" when status is undefined', () => {
     render(<StatusCard />);
 
-    expect(screen.getByTestId('no-status')).toHaveTextContent('No status available');
+    expect(screen.getByTestId('no-status')).toHaveTextContent(
+      'No status available'
+    );
   });
 });

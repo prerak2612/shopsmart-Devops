@@ -7,11 +7,16 @@ function StatusCard({ status, message, timestamp }) {
       {status ? (
         <div>
           <p>
-            Status: <span className="status-ok" data-testid="status-text">{formatStatus(status)}</span>
+            Status:{' '}
+            <span className="status-ok" data-testid="status-text">
+              {formatStatus(status)}
+            </span>
           </p>
           {message && <p data-testid="message-text">Message: {message}</p>}
           {timestamp && (
-            <p data-testid="timestamp-text">Timestamp: {formatTimestamp(timestamp)}</p>
+            <p data-testid="timestamp-text">
+              Timestamp: {formatTimestamp(timestamp)}
+            </p>
           )}
         </div>
       ) : (

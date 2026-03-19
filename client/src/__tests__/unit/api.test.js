@@ -20,11 +20,17 @@ describe('handleApiError', () => {
 
   it('should handle errors with no message', () => {
     const result = handleApiError({});
-    expect(result).toEqual({ error: true, message: 'An unknown error occurred' });
+    expect(result).toEqual({
+      error: true,
+      message: 'An unknown error occurred',
+    });
   });
 
   it('should handle null/undefined errors', () => {
     const result = handleApiError(null);
-    expect(result).toEqual({ error: true, message: 'An unknown error occurred' });
+    expect(result).toEqual({
+      error: true,
+      message: 'An unknown error occurred',
+    });
   });
 });

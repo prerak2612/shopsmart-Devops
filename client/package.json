@@ -12,7 +12,9 @@
     "test:unit": "vitest run --reporter=verbose src/__tests__/unit/",
     "test:integration": "vitest run --reporter=verbose src/__tests__/integration/",
     "test:e2e": "npx playwright test",
-    "test:all": "vitest run --reporter=verbose && npx playwright test"
+    "test:all": "vitest run --reporter=verbose && npx playwright test",
+    "format": "prettier --write \"src/**/*.{js,jsx}\"",
+    "format:check": "prettier --check \"src/**/*.{js,jsx}\""
   },
   "dependencies": {
     "react": "^18.2.0",
@@ -30,6 +32,7 @@
     "eslint-plugin-react-hooks": "^4.6.0",
     "eslint-plugin-react-refresh": "^0.4.6",
     "jsdom": "^24.0.0",
+    "prettier": "^3.8.1",
     "vite": "^5.4.21",
     "vitest": "^1.5.0"
   }
