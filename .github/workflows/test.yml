@@ -170,15 +170,29 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Guard: skip deploy if EC2 secrets are not yet configured.
+      # Prevents a red failure on repos where EC2 isn't set up.
+      - name: Check required secrets
+        id: secrets-check
+        run: |
+          if [ -z "${{ secrets.EC2_HOST }}" ] || \
+             [ -z "${{ secrets.EC2_USER }}" ] || \
+             [ -z "${{ secrets.EC2_SSH_KEY }}" ] || \
+             [ -z "${{ secrets.EC2_APP_DIR }}" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "⚠️  EC2 secrets not configured — skipping deploy."
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Deploy via SSH to EC2
+        if: steps.secrets-check.outputs.skip == 'false'
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
           port: 22
-          # Pass the app directory as an env variable so deploy.sh can use it.
-          envs: EC2_APP_DIR
           script_stop: true
           script: |
             export APP_DIR="${{ secrets.EC2_APP_DIR }}"
