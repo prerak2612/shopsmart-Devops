@@ -5,3 +5,6 @@ dist
 build
 coverage
 .vercel
+
+client/playwright-report/
+client/test-results/
