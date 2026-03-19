@@ -1,0 +1,47 @@
+version: 2
+
+updates:
+  # Weekly updates for the React frontend (client/)
+  - package-ecosystem: 'npm'
+    directory: '/client'
+    schedule:
+      interval: 'weekly'
+      day: 'monday'
+      time: '09:00'
+    open-pull-requests-limit: 10
+    labels:
+      - 'dependencies'
+      - 'frontend'
+    commit-message:
+      prefix: 'chore(deps)'
+    reviewers:
+      - 'prerak2612'
+
+  # Weekly updates for the Express backend (server/)
+  - package-ecosystem: 'npm'
+    directory: '/server'
+    schedule:
+      interval: 'weekly'
+      day: 'monday'
+      time: '09:00'
+    open-pull-requests-limit: 10
+    labels:
+      - 'dependencies'
+      - 'backend'
+    commit-message:
+      prefix: 'chore(deps)'
+    reviewers:
+      - 'prerak2612'
+
+  # Weekly updates for GitHub Actions itself
+  - package-ecosystem: 'github-actions'
+    directory: '/'
+    schedule:
+      interval: 'weekly'
+      day: 'monday'
+      time: '09:00'
+    labels:
+      - 'dependencies'
+      - 'ci'
+    commit-message:
+      prefix: 'chore(deps)'
