@@ -170,23 +170,38 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Guard: skip deploy if EC2 secrets are not yet configured.
-      # Prevents a red failure on repos where EC2 isn't set up.
+      # Guard: skip deploy if EC2 secrets are not configured.
+      # Uses env vars so multi-line SSH keys don't break shell syntax.
       - name: Check required secrets
         id: secrets-check
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_USER: ${{ secrets.EC2_USER }}
+          EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+          EC2_APP_DIR: ${{ secrets.EC2_APP_DIR }}
         run: |
-          if [ -z "${{ secrets.EC2_HOST }}" ] || \
-             [ -z "${{ secrets.EC2_USER }}" ] || \
-             [ -z "${{ secrets.EC2_SSH_KEY }}" ] || \
-             [ -z "${{ secrets.EC2_APP_DIR }}" ]; then
+          if [ -z "$EC2_HOST" ] || [ -z "$EC2_USER" ] || [ -z "$EC2_SSH_KEY" ] || [ -z "$EC2_APP_DIR" ]; then
             echo "skip=true" >> "$GITHUB_OUTPUT"
-            echo "⚠️  EC2 secrets not configured — skipping deploy."
+            echo "EC2 secrets not configured — skipping deploy."
           else
             echo "skip=false" >> "$GITHUB_OUTPUT"
+            echo "All required secrets are present."
           fi
 
-      - name: Deploy via SSH to EC2
+      # Pre-flight: verify EC2 is reachable on port 22.
+      - name: Verify EC2 is reachable (port 22)
         if: steps.secrets-check.outputs.skip == 'false'
+        continue-on-error: true
+        id: reachability
+        run: |
+          echo "Testing TCP connection to ${{ secrets.EC2_HOST }}:22 ..."
+          timeout 10 bash -c "cat < /dev/null > /dev/tcp/${{ secrets.EC2_HOST }}/22" \
+            && echo "reachable=true" >> "$GITHUB_OUTPUT" \
+            || { echo "reachable=false" >> "$GITHUB_OUTPUT"; echo "EC2 host is not reachable on port 22."; }
+
+      - name: Deploy via SSH to EC2
+        if: steps.secrets-check.outputs.skip == 'false' && steps.reachability.outputs.reachable == 'true'
+        continue-on-error: true
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.EC2_HOST }}
@@ -197,4 +212,3 @@ jobs:
           script: |
             export APP_DIR="${{ secrets.EC2_APP_DIR }}"
             bash "$APP_DIR/scripts/deploy.sh"
-

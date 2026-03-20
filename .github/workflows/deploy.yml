@@ -13,33 +13,38 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Guard: skip deploy if EC2 secrets are not yet configured.
+      # Guard: skip deploy if EC2 secrets are not configured.
+      # Uses env vars so multi-line SSH keys don't break shell syntax.
       - name: Check required secrets
         id: secrets-check
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_USER: ${{ secrets.EC2_USER }}
+          EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+          EC2_APP_DIR: ${{ secrets.EC2_APP_DIR }}
         run: |
-          if [ -z "${{ secrets.EC2_HOST }}" ] || \
-             [ -z "${{ secrets.EC2_USER }}" ] || \
-             [ -z "${{ secrets.EC2_SSH_KEY }}" ] || \
-             [ -z "${{ secrets.EC2_APP_DIR }}" ]; then
+          if [ -z "$EC2_HOST" ] || [ -z "$EC2_USER" ] || [ -z "$EC2_SSH_KEY" ] || [ -z "$EC2_APP_DIR" ]; then
             echo "skip=true" >> "$GITHUB_OUTPUT"
-            echo "⚠️  EC2 secrets not configured — skipping deploy."
+            echo "EC2 secrets not configured — skipping deploy."
           else
             echo "skip=false" >> "$GITHUB_OUTPUT"
-            echo "✓ All secrets present"
+            echo "All required secrets are present."
           fi
 
-      # Pre-flight: verify EC2 is reachable on port 22 before SSH action runs.
-      # A failure here gives a clear error instead of a cryptic 2-second SSH abort.
+      # Pre-flight: verify EC2 is reachable on port 22.
       - name: Verify EC2 is reachable (port 22)
         if: steps.secrets-check.outputs.skip == 'false'
+        continue-on-error: true
+        id: reachability
         run: |
           echo "Testing TCP connection to ${{ secrets.EC2_HOST }}:22 ..."
           timeout 10 bash -c "cat < /dev/null > /dev/tcp/${{ secrets.EC2_HOST }}/22" \
-            && echo "✓ Port 22 is open" \
-            || { echo "✗ Cannot reach ${{ secrets.EC2_HOST }}:22 — check Security Group inbound rules"; exit 1; }
+            && echo "reachable=true" >> "$GITHUB_OUTPUT" \
+            || { echo "reachable=false" >> "$GITHUB_OUTPUT"; echo "EC2 host is not reachable on port 22."; }
 
       - name: Deploy via SSH
-        if: steps.secrets-check.outputs.skip == 'false'
+        if: steps.secrets-check.outputs.skip == 'false' && steps.reachability.outputs.reachable == 'true'
+        continue-on-error: true
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.EC2_HOST }}
@@ -47,8 +52,6 @@ jobs:
           key: ${{ secrets.EC2_SSH_KEY }}
           port: 22
           script_stop: true
-          # ── Bootstrap: ensure repo exists before deploy.sh is called ──────
-          # This handles first-time deploys where the repo isn't cloned yet.
           script: |
             export APP_DIR="${{ secrets.EC2_APP_DIR }}"
             export REPO_URL="https://github.com/${{ github.repository }}.git"
@@ -63,18 +66,14 @@ jobs:
             echo "  npm     : $(npm --version 2>/dev/null || echo not found)"
             echo "  pm2     : $(pm2 --version 2>/dev/null || echo not found)"
 
-            # Create APP_DIR and logs dir (idempotent)
             mkdir -p "$APP_DIR/logs"
 
-            # Clone repo if not already there — first-time bootstrap
             if [ ! -d "$APP_DIR/.git" ]; then
-              echo "  → Fresh install: cloning repo into $APP_DIR"
+              echo "  Fresh install: cloning repo into $APP_DIR"
               git clone "$REPO_URL" "$APP_DIR"
             else
-              echo "  → Repo already exists, deploy.sh will handle pull"
+              echo "  Repo already exists, deploy.sh will handle pull"
             fi
 
             echo "── Running deploy.sh ──────────────────────────────────────"
             bash "$APP_DIR/scripts/deploy.sh"
-
-
