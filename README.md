@@ -233,9 +233,9 @@ bash $APP_DIR/scripts/deploy.sh
 
 ---
 
-## Dependabot
+## 8. Dependabot Configuration
 
-Configured in `.github/dependabot.yml` to open weekly PRs for:
+Configured in `.github/dependabot.yml` to auto-check for outdated dependencies and open weekly PRs for:
 
 - `client/` npm dependencies
 - `server/` npm dependencies
