@@ -8,3 +8,8 @@ coverage
 
 client/playwright-report/
 client/test-results/
+infra/.terraform/
+infra/*.tfstate
+infra/*.tfstate.*
+infra/tfplan
+.aws/ecs-task-definition.generated.json
