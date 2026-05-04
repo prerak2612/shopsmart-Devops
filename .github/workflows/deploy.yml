@@ -1,79 +1,162 @@
-name: Deploy to EC2
+name: Terraform + ECS Deploy
 
 on:
-  push:
-    branches:
-      - main
+  workflow_run:
+    workflows: ["Test Pipeline"]
+    types: [completed]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: terraform-ecs-main
+  cancel-in-progress: false
 
 jobs:
   deploy:
-    name: Deploy to EC2
+    name: Terraform Apply, Build, Push, Deploy
     runs-on: ubuntu-latest
-
+    if: >
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main'
+    env:
+      AWS_REGION: ${{ secrets.AWS_REGION }}
+      TF_IN_AUTOMATION: true
+      IMAGE_TAG: ${{ github.event.workflow_run.head_sha }}
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout tested commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
 
-      # Guard: skip deploy if EC2 secrets are not configured.
-      # Uses env vars so multi-line SSH keys don't break shell syntax.
-      - name: Check required secrets
-        id: secrets-check
-        env:
-          EC2_HOST: ${{ secrets.EC2_HOST }}
-          EC2_USER: ${{ secrets.EC2_USER }}
-          EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
-          EC2_APP_DIR: ${{ secrets.EC2_APP_DIR }}
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Bootstrap Terraform state bucket
         run: |
-          if [ -z "$EC2_HOST" ] || [ -z "$EC2_USER" ] || [ -z "$EC2_SSH_KEY" ] || [ -z "$EC2_APP_DIR" ]; then
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-            echo "EC2 secrets not configured — skipping deploy."
+          ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text)"
+          STATE_BUCKET="shopsmart-tfstate-${ACCOUNT_ID}-${AWS_REGION}"
+
+          echo "TF_STATE_BUCKET=${STATE_BUCKET}" >> "$GITHUB_ENV"
+
+          if aws s3api head-bucket --bucket "${STATE_BUCKET}" 2>/dev/null; then
+            echo "Terraform state bucket already exists."
           else
-            echo "skip=false" >> "$GITHUB_OUTPUT"
-            echo "All required secrets are present."
+            if [ "${AWS_REGION}" = "us-east-1" ]; then
+              aws s3api create-bucket \
+                --bucket "${STATE_BUCKET}" \
+                --region "${AWS_REGION}"
+            else
+              aws s3api create-bucket \
+                --bucket "${STATE_BUCKET}" \
+                --region "${AWS_REGION}" \
+                --create-bucket-configuration LocationConstraint="${AWS_REGION}"
+            fi
           fi
 
-      # Pre-flight: verify EC2 is reachable on port 22.
-      - name: Verify EC2 is reachable (port 22)
-        if: steps.secrets-check.outputs.skip == 'false'
-        continue-on-error: true
-        id: reachability
+          aws s3api put-bucket-versioning \
+            --bucket "${STATE_BUCKET}" \
+            --versioning-configuration Status=Enabled
+
+          aws s3api put-bucket-encryption \
+            --bucket "${STATE_BUCKET}" \
+            --server-side-encryption-configuration '{"Rules":[{"ApplyServerSideEncryptionByDefault":{"SSEAlgorithm":"AES256"}}]}'
+
+          aws s3api put-public-access-block \
+            --bucket "${STATE_BUCKET}" \
+            --public-access-block-configuration BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true
+
+      - name: Terraform init
+        working-directory: infra
         run: |
-          echo "Testing TCP connection to ${{ secrets.EC2_HOST }}:22 ..."
-          timeout 10 bash -c "cat < /dev/null > /dev/tcp/${{ secrets.EC2_HOST }}/22" \
-            && echo "reachable=true" >> "$GITHUB_OUTPUT" \
-            || { echo "reachable=false" >> "$GITHUB_OUTPUT"; echo "EC2 host is not reachable on port 22."; }
+          terraform init \
+            -backend-config="bucket=${TF_STATE_BUCKET}" \
+            -backend-config="key=shopsmart/terraform.tfstate" \
+            -backend-config="region=${AWS_REGION}"
 
-      - name: Deploy via SSH
-        if: steps.secrets-check.outputs.skip == 'false' && steps.reachability.outputs.reachable == 'true'
-        continue-on-error: true
-        uses: appleboy/ssh-action@v1.0.3
+      - name: Terraform validate
+        working-directory: infra
+        run: terraform validate
+
+      - name: Terraform plan
+        working-directory: infra
+        run: terraform plan -input=false -out=tfplan -var="aws_region=${AWS_REGION}"
+
+      - name: Terraform apply
+        working-directory: infra
+        run: terraform apply -input=false -auto-approve tfplan
+
+      - name: Export Terraform outputs
+        id: terraform-outputs
+        working-directory: infra
+        run: |
+          echo "ECR_REPOSITORY_URL=$(terraform output -raw ecr_repository_url)" >> "$GITHUB_ENV"
+          echo "ECS_CLUSTER_NAME=$(terraform output -raw ecs_cluster_name)" >> "$GITHUB_ENV"
+          echo "ECS_SERVICE_NAME=$(terraform output -raw ecs_service_name)" >> "$GITHUB_ENV"
+          echo "ECS_TASK_FAMILY=$(terraform output -raw ecs_task_family)" >> "$GITHUB_ENV"
+          echo "ECS_CONTAINER_NAME=$(terraform output -raw ecs_container_name)" >> "$GITHUB_ENV"
+          echo "ECS_EXECUTION_ROLE_ARN=$(terraform output -raw ecs_execution_role_arn)" >> "$GITHUB_ENV"
+          echo "ECS_TASK_ROLE_ARN=$(terraform output -raw ecs_task_role_arn)" >> "$GITHUB_ENV"
+          echo "ECS_LOG_GROUP_NAME=$(terraform output -raw ecs_log_group_name)" >> "$GITHUB_ENV"
+          echo "ALB_DNS_NAME=$(terraform output -raw alb_dns_name)" >> "$GITHUB_ENV"
+
+      - name: Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build Docker image
+        run: docker build -t "${ECR_REPOSITORY_URL}:${IMAGE_TAG}" .
+
+      - name: Push Docker image
+        run: docker push "${ECR_REPOSITORY_URL}:${IMAGE_TAG}"
+
+      - name: Prepare ECS task definition
+        run: |
+          IMAGE_URI="${ECR_REPOSITORY_URL}:${IMAGE_TAG}"
+          sed \
+            -e "s|__TASK_FAMILY__|${ECS_TASK_FAMILY}|g" \
+            -e "s|__EXECUTION_ROLE_ARN__|${ECS_EXECUTION_ROLE_ARN}|g" \
+            -e "s|__TASK_ROLE_ARN__|${ECS_TASK_ROLE_ARN}|g" \
+            -e "s|__CONTAINER_NAME__|${ECS_CONTAINER_NAME}|g" \
+            -e "s|__IMAGE_URI__|${IMAGE_URI}|g" \
+            -e "s|__LOG_GROUP_NAME__|${ECS_LOG_GROUP_NAME}|g" \
+            -e "s|__AWS_REGION__|${AWS_REGION}|g" \
+            .aws/ecs-task-definition.json.tpl > .aws/ecs-task-definition.generated.json
+
+      - name: Render task definition with new image
+        id: task-def
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
         with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USER }}
-          key: ${{ secrets.EC2_SSH_KEY }}
-          port: 22
-          script_stop: true
-          script: |
-            export APP_DIR="${{ secrets.EC2_APP_DIR }}"
-            export REPO_URL="https://github.com/${{ github.repository }}.git"
-            export NODE_ENV="production"
-            export PORT="5001"
+          task-definition: .aws/ecs-task-definition.generated.json
+          container-name: ${{ env.ECS_CONTAINER_NAME }}
+          image: ${{ env.ECR_REPOSITORY_URL }}:${{ env.IMAGE_TAG }}
 
-            echo "── Bootstrap ──────────────────────────────────────────────"
-            echo "  APP_DIR : $APP_DIR"
-            echo "  REPO_URL: $REPO_URL"
-            echo "  User    : $(whoami)"
-            echo "  Node    : $(node --version 2>/dev/null || echo not found)"
-            echo "  npm     : $(npm --version 2>/dev/null || echo not found)"
-            echo "  pm2     : $(pm2 --version 2>/dev/null || echo not found)"
+      - name: Deploy task definition to ECS
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        with:
+          task-definition: ${{ steps.task-def.outputs.task-definition }}
+          service: ${{ env.ECS_SERVICE_NAME }}
+          cluster: ${{ env.ECS_CLUSTER_NAME }}
+          wait-for-service-stability: false
 
-            mkdir -p "$APP_DIR/logs"
+      - name: Scale ECS service to one running task
+        run: |
+          aws ecs update-service \
+            --cluster "${ECS_CLUSTER_NAME}" \
+            --service "${ECS_SERVICE_NAME}" \
+            --desired-count 1 \
+            --force-new-deployment
 
-            if [ ! -d "$APP_DIR/.git" ]; then
-              echo "  Fresh install: cloning repo into $APP_DIR"
-              git clone "$REPO_URL" "$APP_DIR"
-            else
-              echo "  Repo already exists, deploy.sh will handle pull"
-            fi
+      - name: Wait for service stability
+        run: aws ecs wait services-stable --cluster "${ECS_CLUSTER_NAME}" --services "${ECS_SERVICE_NAME}"
 
-            echo "── Running deploy.sh ──────────────────────────────────────"
-            bash "$APP_DIR/scripts/deploy.sh"
+      - name: Show deployed endpoint
+        run: echo "ShopSmart is available at http://${ALB_DNS_NAME}"
