@@ -1,0 +1,17 @@
+.git
+.github
+.terraform
+infra/.terraform
+infra/*.tfstate
+infra/*.tfstate.*
+infra/tfplan
+node_modules
+client/node_modules
+server/node_modules
+client/playwright-report
+client/test-results
+coverage
+.DS_Store
+README.md
+Idea.md
+render.yaml

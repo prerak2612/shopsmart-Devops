@@ -1,7 +1,11 @@
 const express = require('express');
 const cors = require('cors');
+const fs = require('fs');
+const path = require('path');
 
 const app = express();
+const clientBuildDir = path.resolve(__dirname, '../../client/dist');
+const clientIndexFile = path.join(clientBuildDir, 'index.html');
 
 // Middleware
 app.use(cors());
@@ -16,9 +20,19 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// Root Route (optional, just to show something)
+// When the frontend bundle exists, serve it from the same container so ECS
+// only needs to manage one web service.
+if (fs.existsSync(clientBuildDir)) {
+  app.use(express.static(clientBuildDir));
+}
+
+// Root Route
 app.get('/', (req, res) => {
-  res.send('ShopSmart Backend Service');
+  if (fs.existsSync(clientIndexFile)) {
+    return res.sendFile(clientIndexFile);
+  }
+
+  return res.send('ShopSmart Backend Service');
 });
 
 module.exports = app;
