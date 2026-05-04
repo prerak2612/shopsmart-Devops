@@ -100,14 +100,16 @@ jobs:
         working-directory: infra
         run: |
           echo "ECR_REPOSITORY_URL=$(terraform output -raw ecr_repository_url)" >> "$GITHUB_ENV"
+          echo "ECR_REPOSITORY_NAME=$(terraform output -raw ecr_repository_name)" >> "$GITHUB_ENV"
           echo "ECS_CLUSTER_NAME=$(terraform output -raw ecs_cluster_name)" >> "$GITHUB_ENV"
           echo "ECS_SERVICE_NAME=$(terraform output -raw ecs_service_name)" >> "$GITHUB_ENV"
           echo "ECS_TASK_FAMILY=$(terraform output -raw ecs_task_family)" >> "$GITHUB_ENV"
-          echo "ECS_CONTAINER_NAME=$(terraform output -raw ecs_container_name)" >> "$GITHUB_ENV"
+          echo "ECS_CONTAINER_NAME=$(terraform output -raw container_name)" >> "$GITHUB_ENV"
           echo "ECS_EXECUTION_ROLE_ARN=$(terraform output -raw ecs_execution_role_arn)" >> "$GITHUB_ENV"
           echo "ECS_TASK_ROLE_ARN=$(terraform output -raw ecs_task_role_arn)" >> "$GITHUB_ENV"
           echo "ECS_LOG_GROUP_NAME=$(terraform output -raw ecs_log_group_name)" >> "$GITHUB_ENV"
-          echo "ALB_DNS_NAME=$(terraform output -raw alb_dns_name)" >> "$GITHUB_ENV"
+          echo "AWS_REGION=$(terraform output -raw aws_region)" >> "$GITHUB_ENV"
+          echo "ALB_DNS_NAME=$(terraform output -raw load_balancer_dns)" >> "$GITHUB_ENV"
 
       - name: Login to Amazon ECR
         uses: aws-actions/amazon-ecr-login@v2

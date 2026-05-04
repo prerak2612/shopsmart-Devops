@@ -8,6 +8,11 @@ output "ecr_repository_url" {
   value       = aws_ecr_repository.app.repository_url
 }
 
+output "ecr_repository_name" {
+  description = "ECR repository name created by Terraform."
+  value       = aws_ecr_repository.app.name
+}
+
 output "ecs_cluster_name" {
   description = "ECS cluster name for deployments."
   value       = aws_ecs_cluster.main.name
@@ -23,7 +28,7 @@ output "ecs_task_family" {
   value       = aws_ecs_task_definition.app.family
 }
 
-output "ecs_container_name" {
+output "container_name" {
   description = "Container name inside the ECS task definition."
   value       = local.container_name
 }
@@ -43,7 +48,12 @@ output "ecs_log_group_name" {
   value       = aws_cloudwatch_log_group.ecs.name
 }
 
-output "alb_dns_name" {
+output "aws_region" {
+  description = "AWS region used for the Terraform deployment."
+  value       = var.aws_region
+}
+
+output "load_balancer_dns" {
   description = "Public endpoint for the ECS service."
   value       = aws_lb.app.dns_name
 }

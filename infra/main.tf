@@ -5,9 +5,9 @@ data "aws_availability_zones" "available" {
 data "aws_caller_identity" "current" {}
 
 locals {
-  name_prefix        = var.project_name
-  container_name     = "${var.project_name}-app"
-  task_family        = "${var.project_name}-task"
+  name_prefix        = "${var.project_name}-${random_id.name_suffix.hex}"
+  container_name     = "${local.name_prefix}-app"
+  task_family        = "${local.name_prefix}-task"
   availability_zones = slice(data.aws_availability_zones.available.names, 0, 2)
   lab_role_arn       = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/LabRole"
 
@@ -21,6 +21,10 @@ resource "random_string" "bucket_suffix" {
   length  = 8
   special = false
   upper   = false
+}
+
+resource "random_id" "name_suffix" {
+  byte_length = 4
 }
 
 resource "aws_s3_bucket" "artifacts" {
@@ -59,7 +63,7 @@ resource "aws_s3_bucket_public_access_block" "artifacts" {
 }
 
 resource "aws_ecr_repository" "app" {
-  name                 = "${var.project_name}-repo"
+  name                 = "${local.name_prefix}-repo"
   image_tag_mutability = "MUTABLE"
 
   image_scanning_configuration {
@@ -71,12 +75,12 @@ resource "aws_ecr_repository" "app" {
   }
 
   tags = merge(local.common_tags, {
-    Name = "${var.project_name}-repo"
+    Name = "${local.name_prefix}-repo"
   })
 }
 
 resource "aws_cloudwatch_log_group" "ecs" {
-  name              = "/ecs/${var.project_name}"
+  name              = "/ecs/${local.name_prefix}"
   retention_in_days = 14
 
   tags = local.common_tags
@@ -189,18 +193,18 @@ resource "aws_security_group" "ecs_service" {
 }
 
 resource "aws_lb" "app" {
-  name               = "${var.project_name}-alb"
+  name               = "${local.name_prefix}-alb"
   load_balancer_type = "application"
   security_groups    = [aws_security_group.alb.id]
   subnets            = [for subnet in aws_subnet.public : subnet.id]
 
   tags = merge(local.common_tags, {
-    Name = "${var.project_name}-alb"
+    Name = "${local.name_prefix}-alb"
   })
 }
 
 resource "aws_lb_target_group" "app" {
-  name        = "${var.project_name}-tg"
+  name        = "${local.name_prefix}-tg"
   port        = var.container_port
   protocol    = "HTTP"
   target_type = "ip"
@@ -215,7 +219,7 @@ resource "aws_lb_target_group" "app" {
   }
 
   tags = merge(local.common_tags, {
-    Name = "${var.project_name}-tg"
+    Name = "${local.name_prefix}-tg"
   })
 }
 
@@ -231,7 +235,7 @@ resource "aws_lb_listener" "http" {
 }
 
 resource "aws_ecs_cluster" "main" {
-  name = "${var.project_name}-cluster"
+  name = "${local.name_prefix}-cluster"
 
   setting {
     name  = "containerInsights"
@@ -279,7 +283,7 @@ resource "aws_ecs_task_definition" "app" {
 }
 
 resource "aws_ecs_service" "app" {
-  name                   = "${var.project_name}-service"
+  name                   = "${local.name_prefix}-service"
   cluster                = aws_ecs_cluster.main.id
   task_definition        = aws_ecs_task_definition.app.arn
   desired_count          = var.ecs_service_desired_count
