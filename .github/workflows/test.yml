@@ -68,8 +68,19 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Create unit test report directory
+        run: mkdir -p reports
+
       - name: Run unit tests
-        run: npm run test:unit
+        run: npx vitest run --reporter=verbose --reporter=junit --outputFile.junit=reports/unit-test-report.xml src/__tests__/unit/
+
+      - name: Upload unit test report
+        uses: actions/upload-artifact@v4
+        if: ${{ always() }}
+        with:
+          name: unit-test-report
+          path: client/reports/unit-test-report.xml
+          retention-days: 30
 
   # ── Job 3: Client integration tests ──────────────────────────────────────────
   client-integration-tests:
@@ -92,8 +103,19 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Create integration test report directory
+        run: mkdir -p reports
+
       - name: Run integration tests
-        run: npm run test:integration
+        run: npx vitest run --reporter=verbose --reporter=junit --outputFile.junit=reports/integration-test-report.xml src/__tests__/integration/
+
+      - name: Upload integration test report
+        uses: actions/upload-artifact@v4
+        if: ${{ always() }}
+        with:
+          name: integration-test-report
+          path: client/reports/integration-test-report.xml
+          retention-days: 30
 
   # ── Job 4: Server tests ───────────────────────────────────────────────────────
   server-tests:
@@ -116,8 +138,23 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Create server test report directories
+        run: |
+          mkdir -p reports
+          mkdir -p coverage
+
       - name: Run server tests
-        run: npm test
+        run: npx jest --json --outputFile=reports/server-test-report.json --coverage --coverageDirectory=coverage
+
+      - name: Upload server test report
+        uses: actions/upload-artifact@v4
+        if: ${{ always() }}
+        with:
+          name: server-test-report
+          path: |
+            server/reports/server-test-report.json
+            server/coverage/
+          retention-days: 30
 
   # ── Job 5: E2E tests (Playwright) ────────────────────────────────────────────
   e2e-tests:
