@@ -9,6 +9,7 @@ locals {
   container_name     = "${var.project_name}-app"
   task_family        = "${var.project_name}-task"
   availability_zones = slice(data.aws_availability_zones.available.names, 0, 2)
+  lab_role_arn       = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/LabRole"
 
   common_tags = {
     Project   = var.project_name
@@ -229,45 +230,6 @@ resource "aws_lb_listener" "http" {
   }
 }
 
-resource "aws_iam_role" "ecs_execution" {
-  name = "${var.project_name}-ecs-execution-role"
-
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [{
-      Action = "sts:AssumeRole"
-      Effect = "Allow"
-      Principal = {
-        Service = "ecs-tasks.amazonaws.com"
-      }
-    }]
-  })
-
-  tags = local.common_tags
-}
-
-resource "aws_iam_role_policy_attachment" "ecs_execution" {
-  role       = aws_iam_role.ecs_execution.name
-  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
-}
-
-resource "aws_iam_role" "ecs_task" {
-  name = "${var.project_name}-ecs-task-role"
-
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [{
-      Action = "sts:AssumeRole"
-      Effect = "Allow"
-      Principal = {
-        Service = "ecs-tasks.amazonaws.com"
-      }
-    }]
-  })
-
-  tags = local.common_tags
-}
-
 resource "aws_ecs_cluster" "main" {
   name = "${var.project_name}-cluster"
 
@@ -285,8 +247,10 @@ resource "aws_ecs_task_definition" "app" {
   requires_compatibilities = ["FARGATE"]
   cpu                      = tostring(var.ecs_task_cpu)
   memory                   = tostring(var.ecs_task_memory)
-  execution_role_arn       = aws_iam_role.ecs_execution.arn
-  task_role_arn            = aws_iam_role.ecs_task.arn
+  # AWS Academy Learner Lab blocks iam:CreateRole, so ECS reuses the
+  # pre-provisioned LabRole instead of creating custom task roles.
+  execution_role_arn       = local.lab_role_arn
+  task_role_arn            = local.lab_role_arn
 
   container_definitions = jsonencode([
     {

@@ -30,12 +30,12 @@ output "ecs_container_name" {
 
 output "ecs_execution_role_arn" {
   description = "Execution role ARN injected into the ECS task definition template."
-  value       = aws_iam_role.ecs_execution.arn
+  value       = local.lab_role_arn
 }
 
 output "ecs_task_role_arn" {
   description = "Task role ARN injected into the ECS task definition template."
-  value       = aws_iam_role.ecs_task.arn
+  value       = local.lab_role_arn
 }
 
 output "ecs_log_group_name" {
