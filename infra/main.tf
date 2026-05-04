@@ -1,14 +1,20 @@
-data "aws_availability_zones" "available" {
-  state = "available"
+data "aws_caller_identity" "current" {}
+
+data "aws_vpc" "default" {
+  default = true
 }
 
-data "aws_caller_identity" "current" {}
+data "aws_subnets" "default" {
+  filter {
+    name   = "vpc-id"
+    values = [data.aws_vpc.default.id]
+  }
+}
 
 locals {
   name_prefix        = "${var.project_name}-${random_id.name_suffix.hex}"
   container_name     = "${local.name_prefix}-app"
   task_family        = "${local.name_prefix}-task"
-  availability_zones = slice(data.aws_availability_zones.available.names, 0, 2)
   lab_role_arn       = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/LabRole"
 
   common_tags = {
@@ -86,66 +92,10 @@ resource "aws_cloudwatch_log_group" "ecs" {
   tags = local.common_tags
 }
 
-resource "aws_vpc" "main" {
-  cidr_block           = "10.0.0.0/16"
-  enable_dns_support   = true
-  enable_dns_hostnames = true
-
-  tags = merge(local.common_tags, {
-    Name = "${var.project_name}-vpc"
-  })
-}
-
-resource "aws_internet_gateway" "main" {
-  vpc_id = aws_vpc.main.id
-
-  tags = merge(local.common_tags, {
-    Name = "${var.project_name}-igw"
-  })
-}
-
-resource "aws_subnet" "public" {
-  for_each = {
-    for idx, az in local.availability_zones : az => {
-      az         = az
-      cidr_block = cidrsubnet(aws_vpc.main.cidr_block, 8, idx)
-    }
-  }
-
-  vpc_id                  = aws_vpc.main.id
-  cidr_block              = each.value.cidr_block
-  availability_zone       = each.value.az
-  map_public_ip_on_launch = true
-
-  tags = merge(local.common_tags, {
-    Name = "${var.project_name}-public-${replace(each.value.az, var.aws_region, "")}"
-  })
-}
-
-resource "aws_route_table" "public" {
-  vpc_id = aws_vpc.main.id
-
-  route {
-    cidr_block = "0.0.0.0/0"
-    gateway_id = aws_internet_gateway.main.id
-  }
-
-  tags = merge(local.common_tags, {
-    Name = "${var.project_name}-public-rt"
-  })
-}
-
-resource "aws_route_table_association" "public" {
-  for_each = aws_subnet.public
-
-  subnet_id      = each.value.id
-  route_table_id = aws_route_table.public.id
-}
-
 resource "aws_security_group" "alb" {
-  name        = "${var.project_name}-alb-sg"
+  name        = "${local.name_prefix}-alb-sg"
   description = "Allow public HTTP traffic to the ShopSmart load balancer"
-  vpc_id      = aws_vpc.main.id
+  vpc_id      = data.aws_vpc.default.id
 
   ingress {
     description = "HTTP from the internet"
@@ -163,14 +113,14 @@ resource "aws_security_group" "alb" {
   }
 
   tags = merge(local.common_tags, {
-    Name = "${var.project_name}-alb-sg"
+    Name = "${local.name_prefix}-alb-sg"
   })
 }
 
 resource "aws_security_group" "ecs_service" {
-  name        = "${var.project_name}-ecs-sg"
+  name        = "${local.name_prefix}-ecs-sg"
   description = "Allow ALB traffic to the ShopSmart ECS tasks"
-  vpc_id      = aws_vpc.main.id
+  vpc_id      = data.aws_vpc.default.id
 
   ingress {
     description     = "App traffic from ALB"
@@ -188,7 +138,7 @@ resource "aws_security_group" "ecs_service" {
   }
 
   tags = merge(local.common_tags, {
-    Name = "${var.project_name}-ecs-sg"
+    Name = "${local.name_prefix}-ecs-sg"
   })
 }
 
@@ -196,7 +146,7 @@ resource "aws_lb" "app" {
   name               = "${local.name_prefix}-alb"
   load_balancer_type = "application"
   security_groups    = [aws_security_group.alb.id]
-  subnets            = [for subnet in aws_subnet.public : subnet.id]
+  subnets            = data.aws_subnets.default.ids
 
   tags = merge(local.common_tags, {
     Name = "${local.name_prefix}-alb"
@@ -208,7 +158,7 @@ resource "aws_lb_target_group" "app" {
   port        = var.container_port
   protocol    = "HTTP"
   target_type = "ip"
-  vpc_id      = aws_vpc.main.id
+  vpc_id      = data.aws_vpc.default.id
 
   health_check {
     enabled             = true
@@ -291,7 +241,7 @@ resource "aws_ecs_service" "app" {
   enable_execute_command = true
 
   network_configuration {
-    subnets          = [for subnet in aws_subnet.public : subnet.id]
+    subnets          = data.aws_subnets.default.ids
     security_groups  = [aws_security_group.ecs_service.id]
     assign_public_ip = true
   }
